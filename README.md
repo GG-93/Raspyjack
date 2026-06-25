@@ -210,6 +210,8 @@ See `docs/FORK_DIFFERENCES.md` for full details.
 - Optional: fan + IRLZ44N MOSFET wired to GPIO 18 for cooling
 - Optional: momentary button wired between GPIO 17 and GND for clean shutdown
 
+> **Wardriving / portable use:** The Pi 4B works well as a battery-powered wardriving unit. Use one micro USB WiFi dongle (e.g. Alfa AWUS036ACS, Panda PAU03) dedicated to connecting back to your phone hotspot (TELUS666) for WebUI access, and a second monitor-mode capable dongle (e.g. Alfa AWUS036ACH) for attacks/scanning. The Pi connects to your hotspot automatically on boot, and you control everything from your phone browser — no screen required.
+
 ### Install order
 
 **Step 1 — Clone this fork and run the main installer**
@@ -231,6 +233,34 @@ Run this once after rebooting. Creates `config/headless.json` with your personal
 ```bash
 sudo bash /root/Raspyjack/scripts/configure_headless.sh
 ```
+
+**Step 2b — Set a static IP so the WebUI is always at the same address (recommended)**
+
+The wizard above asks for your WiFi SSID and password but does **not** prompt for a static IP. Without one, the Pi gets a random IP from your hotspot's DHCP pool and you have to look it up every time. To fix this, open the config file the wizard just created and add `wlan_static_ip` and `wlan_gateway`:
+
+```bash
+nano /root/Raspyjack/config/headless.json
+```
+
+Find the `"network"` section and set:
+
+```json
+"network": {
+  "prefer_wifi_over_ethernet": true,
+  "wlan_static_ip": "172.20.10.100",
+  "wlan_gateway":   "172.20.10.1"
+}
+```
+
+Pick the right values for your hotspot type:
+
+| Hotspot device | Gateway | Safe static IP for the Pi |
+|---|---|---|
+| **iPhone** | `172.20.10.1` | `172.20.10.100` |
+| **Android** | `192.168.43.1` | `192.168.43.100` |
+| **Windows Mobile Hotspot** | `192.168.137.1` | `192.168.137.100` |
+
+iPhone is the most reliable choice — Apple hardcodes the `172.20.10.x` subnet, so the address never changes regardless of which iPhone is generating the hotspot. Once set, bookmark `http://172.20.10.100:8080` and it will always work.
 
 **Step 3 — Apply headless config**
 
