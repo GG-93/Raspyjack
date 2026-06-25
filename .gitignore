@@ -1,3 +1,19 @@
 RPi/
 __pycache__/
 gui_conf.json
+
+# macOS metadata
+.DS_Store
+
+# Secrets / runtime credentials — never commit these
+.webui_token
+.webui_auth.json
+.webui_session_secret
+*.authkey
+tailscale.authkey
+.env
+*.pem
+*.key
+id_rsa
+id_ed25519
+config/headless.json

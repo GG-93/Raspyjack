@@ -386,7 +386,7 @@ setup_eth_direct() {
         echo "  eth0 configured: Pi=${static_ip}. Set connecting computer to same subnet manually."
     fi
 
-    echo "  SSH/WebUI via cable: ssh fapjack@${static_ip} / http://${static_ip}:8080"
+    echo "  SSH/WebUI via cable: ssh ${SUDO_USER:-$USER}@${static_ip} / http://${static_ip}:8080"
 }
 
 set_hostname() {
