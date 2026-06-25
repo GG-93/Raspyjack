@@ -327,7 +327,9 @@ def main():
                 with lock:
                     if view_mode == "menu":
                         name = PRESET_NAMES[selected_idx]
-                fn = APPLY_FNS.get(name)
+                        fn = APPLY_FNS.get(name)
+                    else:
+                        fn = None
                 if fn:
                     result = fn()
                     with lock:
