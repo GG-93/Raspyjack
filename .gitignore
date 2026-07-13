@@ -11,6 +11,8 @@ gui_conf.json
 .webui_session_secret
 *.authkey
 tailscale.authkey
+.tailscale_auth_key
+config/.tailscale_auth_key
 .env
 *.pem
 *.key

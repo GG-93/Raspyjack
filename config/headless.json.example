@@ -20,14 +20,14 @@
     "wlan_static_ip": "",
     "wlan_gateway": "",
 
-    "_eth_comment": "Direct Ethernet (laptop-to-Pi cable) configuration. When eth_static_ip is set the Pi always has that address on eth0 and hands out DHCP so any computer that plugs in gets an IP automatically — no setup on the other computer required. Leave eth_static_ip empty to keep DHCP on eth0.",
-    "eth_static_ip": "192.168.100.1",
-    "eth_dhcp_server": true
+    "_eth_comment": "Flexible Ethernet — eth0 auto-detects what's on the cable. eth_router_mode=true makes eth0 pull DHCP when plugged into a router/switch (Pi gets internet + can scan that LAN). When nothing hands out DHCP (Pi cabled straight to a computer/phone), it falls back to 'shared' mode at eth_static_ip and hands out an IP so you can SSH in — no setup on the other device. Set eth_static_ip empty to disable the direct-connect fallback (pure DHCP client).",
+    "eth_router_mode": true,
+    "eth_static_ip": "192.168.100.1"
   },
 
   "tailscale": {
-    "_comment": "Set enabled=true and provide a path to a file containing your Tailscale auth key for automatic connection.",
-    "enabled": true,
+    "_comment": "Optional remote access. Leave enabled=false unless you want Tailscale — it needs internet to come up, so on an internet-less phone hotspot it just logs errors. To use it, set enabled=true and point auth_key_file at a file holding your key (that file is gitignored).",
+    "enabled": false,
     "auth_key_file": "/root/Raspyjack/config/.tailscale_auth_key"
   },
 
@@ -36,8 +36,7 @@
     "tailscale_ipv4": "",
     "tailscale_magic_dns": "raspyjack.<your-tailnet>.ts.net",
     "mdns_name": "raspyjack.local",
-    "static_ip_on_wifi": "",
-    "static_ip_on_ethernet": "192.168.100.1"
+    "direct_connect_ethernet_ip": "192.168.100.1"
   },
 
   "fan_control": {

@@ -250,12 +250,30 @@ sudo bash /root/Raspyjack/payloads/utilities/raspyjack_headless_setup.sh install
 
 **Step 4 — Access RaspyJack**
 
-Once the Pi connects to your hotspot or WiFi network:
+The WebUI listens on **every** interface (port `8080`) and renders the full RaspyJack
+display in your browser with clickable buttons — you drive everything from the browser,
+no screen needed. How you reach it depends on how the Pi is connected:
 
-- WebUI: `http://raspyjack.local:8080`
-- SSH: `ssh <your-user>@raspyjack.local`
+| Connection | How to reach the WebUI |
+|-----------|------------------------|
+| **Phone hotspot (Android/GrapheneOS)** | `raspyjack.local` usually does **not** work (phones block the multicast mDNS needs) and the IP changes each session. Open your phone's **Hotspot → Connected devices** list, find the Pi's IP, then browse `http://<that-ip>:8080`. |
+| **Laptop hotspot or home router** | `http://raspyjack.local:8080` works here (mDNS passes), or use the IP. |
+| **Direct Ethernet cable (Pi ↔ your computer)** | The Pi hands your computer an IP automatically — `http://192.168.100.1:8080` or `ssh <user>@192.168.100.1`. |
+| **Pi cabled into a router** | It pulls a normal DHCP address (and gets internet) — reach it at that IP. |
 
-**Step 5 — Optional: fan control and shutdown button**
+> **Static IP note:** iPhone hotspots use a fixed subnet (`172.20.10.x`) so a static IP is
+> reliable there; Android/GrapheneOS randomize the subnet every session, so don't rely on a
+> static — use the connected-devices lookup above. By default the Pi uses DHCP so it always
+> joins whatever subnet your hotspot hands out.
+
+**Step 5 — Optional: external USB WiFi adapter (for attacks/monitor mode)**
+
+The onboard WiFi is your management/WebUI link. For monitor-mode and attack payloads, plug in
+a USB WiFi dongle and install its driver from the WebUI: run the **WiFi Adapter Installer**
+payload (`payloads/utilities/wifi_dongle_installer.py`) — it detects the chipset and installs
+the right driver automatically (needs internet: plug the Pi into a router for that step).
+
+**Step 6 — Optional: fan control and shutdown button**
 
 Fan control runs as a payload — launch `Dynamic Fan Control` from the WebUI hardware category.
 

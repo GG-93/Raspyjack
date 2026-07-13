@@ -81,8 +81,9 @@ parse_with_jq() {
     FAN_PIN=$(jq -r '.fan_control.pin // 18' "$CONFIG_FILE")
     WLAN_STATIC_IP=$(jq -r '.network.wlan_static_ip // ""' "$CONFIG_FILE")
     WLAN_GATEWAY=$(jq -r '.network.wlan_gateway // ""' "$CONFIG_FILE")
-    ETH_STATIC_IP=$(jq -r '.network.eth_static_ip // ""' "$CONFIG_FILE")
+    ETH_STATIC_IP=$(jq -r '.network.eth_static_ip // "192.168.100.1"' "$CONFIG_FILE")
     ETH_DHCP_SERVER=$(jq -r '.network.eth_dhcp_server // true' "$CONFIG_FILE")
+    ETH_ROUTER_MODE=$(jq -r '.network.eth_router_mode // true' "$CONFIG_FILE")
 }
 
 parse_with_python() {
@@ -146,12 +147,17 @@ print(data.get('network', {}).get('wlan_gateway', ''))
     ETH_STATIC_IP=$(python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-print(data.get('network', {}).get('eth_static_ip', ''))
+print(data.get('network', {}).get('eth_static_ip', '192.168.100.1'))
 " <<< "$json")
     ETH_DHCP_SERVER=$(python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 print(str(data.get('network', {}).get('eth_dhcp_server', True)).lower())
+" <<< "$json")
+    ETH_ROUTER_MODE=$(python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(str(data.get('network', {}).get('eth_router_mode', True)).lower())
 " <<< "$json")
 }
 
@@ -169,6 +175,7 @@ parse_with_grep() {
     WLAN_GATEWAY=""
     ETH_STATIC_IP="192.168.100.1"
     ETH_DHCP_SERVER=true
+    ETH_ROUTER_MODE=true
 }
 
 validate_required_fields() {
@@ -339,54 +346,75 @@ setup_network() {
 }
 
 
-setup_eth_direct() {
-    local static_ip="${ETH_STATIC_IP:-}"
-    local dhcp="${ETH_DHCP_SERVER:-true}"
+# Flexible Ethernet: eth0 auto-detects what's on the cable and picks the right role.
+#   - Plugged into a ROUTER/switch  -> DHCP client (Pi gets internet + can scan that LAN)
+#   - Plugged into a COMPUTER/PHONE -> "shared" mode: Pi hands out an IP so you can SSH in
+# This is done with two NetworkManager profiles. The DHCP-client profile has higher
+# autoconnect priority and fails fast (short DHCP timeout, may-fail=no); when nothing
+# answers DHCP, NetworkManager automatically falls back to the shared profile.
+# The WebUI stays reachable over WiFi the whole time regardless of what eth0 is doing.
+setup_ethernet() {
+    local static_ip="${ETH_STATIC_IP:-192.168.100.1}"
+    local router_mode="${ETH_ROUTER_MODE:-true}"
 
-    [[ -z "$static_ip" ]] && return
-
-    print_header
-    echo "Configuring direct Ethernet access (eth0)..."
-    echo "  Static IP: $static_ip — any computer plugging in will get an IP automatically."
-
-    # Remove old raspyjack-eth-direct profile if it exists
-    nmcli connection delete "raspyjack-eth-direct" 2>/dev/null || true
-
-    if [[ "$dhcp" == "true" ]]; then
-        # "shared" mode: Pi gets static IP + NM runs built-in DHCP server on eth0.
-        # Any computer plugging in gets an IP — no config needed on the other end.
-        # NM requires dnsmasq for shared mode.
-        if ! command -v dnsmasq >/dev/null 2>&1; then
-            apt-get install -y dnsmasq >/dev/null 2>&1 || true
-        fi
-
-        nmcli connection add \
-            type ethernet \
-            ifname eth0 \
-            con-name "raspyjack-eth-direct" \
-            ipv4.method shared \
-            ipv4.addresses "${static_ip}/24" \
-            ipv4.route-metric 1000 \
-            connection.autoconnect yes \
-            connection.autoconnect-priority -100 >/dev/null 2>&1 || true
-
-        echo "  eth0 configured: Pi=${static_ip}, DHCP server active for connected devices."
-    else
-        # Manual static IP only — the connecting computer must be configured manually
-        nmcli connection add \
-            type ethernet \
-            ifname eth0 \
-            con-name "raspyjack-eth-direct" \
-            ipv4.method manual \
-            ipv4.addresses "${static_ip}/24" \
-            ipv4.route-metric 1000 \
-            connection.autoconnect yes \
-            connection.autoconnect-priority -100 >/dev/null 2>&1 || true
-
-        echo "  eth0 configured: Pi=${static_ip}. Set connecting computer to same subnet manually."
+    if ! command -v nmcli >/dev/null 2>&1; then
+        echo "  WARNING: nmcli not found — skipping Ethernet setup."
+        return
     fi
 
-    echo "  SSH/WebUI via cable: ssh ${SUDO_USER:-$USER}@${static_ip} / http://${static_ip}:8080"
+    print_header
+    echo "Configuring flexible Ethernet (eth0)..."
+    echo "  Auto-detects the cable: router (DHCP client) vs direct computer/phone (shared)."
+
+    # NM 'shared' mode uses a built-in DHCP server that needs dnsmasq.
+    if [[ -n "$static_ip" ]] && ! command -v dnsmasq >/dev/null 2>&1; then
+        apt-get install -y dnsmasq >/dev/null 2>&1 || true
+    fi
+
+    # Clean slate so our profiles are authoritative (also drop NM's auto 'Wired connection 1').
+    nmcli connection delete "raspyjack-eth-router" 2>/dev/null || true
+    nmcli connection delete "raspyjack-eth-direct" 2>/dev/null || true
+    nmcli connection delete "Wired connection 1" 2>/dev/null || true
+
+    # Profile 1: ROUTER — DHCP client, tried first, fails fast so it can fall back.
+    if [[ "$router_mode" == "true" ]]; then
+        nmcli connection add \
+            type ethernet ifname eth0 \
+            con-name "raspyjack-eth-router" \
+            connection.autoconnect yes \
+            connection.autoconnect-priority 10 \
+            connection.autoconnect-retries 1 \
+            ipv4.method auto \
+            ipv4.may-fail no \
+            ipv4.dhcp-timeout 15 \
+            ipv4.route-metric 10 >/dev/null 2>&1 || true
+        echo "  [router] eth0 pulls DHCP when plugged into a router/switch"
+        echo "           (Pi gets internet + payloads can scan that LAN)."
+    fi
+
+    # Profile 2: DIRECT — shared fallback when nothing hands out DHCP (Mac/laptop/phone adapter).
+    if [[ -n "$static_ip" ]]; then
+        nmcli connection add \
+            type ethernet ifname eth0 \
+            con-name "raspyjack-eth-direct" \
+            connection.autoconnect yes \
+            connection.autoconnect-priority 0 \
+            ipv4.method shared \
+            ipv4.addresses "${static_ip}/24" \
+            ipv4.route-metric 1000 >/dev/null 2>&1 || true
+        echo "  [direct] eth0 falls back to Pi=${static_ip}, handing out DHCP to a"
+        echo "           directly-cabled computer/phone (SSH ${SUDO_USER:-$USER}@${static_ip})."
+    fi
+
+    # Apply immediately: try router first, fall back to direct.
+    if [[ "$router_mode" == "true" ]]; then
+        nmcli connection up "raspyjack-eth-router" 2>/dev/null \
+            || nmcli connection up "raspyjack-eth-direct" 2>/dev/null || true
+    elif [[ -n "$static_ip" ]]; then
+        nmcli connection up "raspyjack-eth-direct" 2>/dev/null || true
+    fi
+
+    echo "  Ethernet ready — WebUI stays reachable over WiFi regardless of the cable."
 }
 
 set_hostname() {
@@ -487,7 +515,7 @@ main() {
             disable_main_ui
             set_hostname
             setup_network
-            setup_eth_direct
+            setup_ethernet
             setup_tailscale
             show_status
             echo ""
