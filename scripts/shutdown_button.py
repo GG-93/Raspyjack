@@ -34,21 +34,26 @@ GPIO.setup(SHUTDOWN_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 logging.info(f"Watching GPIO {SHUTDOWN_PIN}. Hold {HOLD_SECONDS}s to shut down.")
 
 try:
+    # Poll the pin instead of GPIO.wait_for_edge(): on current Raspberry Pi OS
+    # (Bookworm) RPi.GPIO edge detection raises "RuntimeError: Error waiting for
+    # edge", so we sample the input every 50 ms — negligible CPU, and it works
+    # reliably across kernels.
     while True:
-        # Wait for button press (pin goes LOW)
-        GPIO.wait_for_edge(SHUTDOWN_PIN, GPIO.FALLING)
-        press_time = time.monotonic()
+        if GPIO.input(SHUTDOWN_PIN) == GPIO.LOW:      # button pressed
+            press_time = time.monotonic()
 
-        # Wait for release or timeout
-        while GPIO.input(SHUTDOWN_PIN) == GPIO.LOW:
-            if time.monotonic() - press_time >= HOLD_SECONDS:
-                logging.info("Shutdown button held — shutting down now.")
-                os.system("shutdown now")
-                sys.exit(0)
-            time.sleep(0.05)
+            # Wait for release or the hold threshold
+            while GPIO.input(SHUTDOWN_PIN) == GPIO.LOW:
+                if time.monotonic() - press_time >= HOLD_SECONDS:
+                    logging.info("Shutdown button held — shutting down now.")
+                    os.system("shutdown now")
+                    sys.exit(0)
+                time.sleep(0.05)
 
-        # Short press — ignore
-        logging.info("Short press detected (ignored). Hold 2s to shut down.")
+            # Short press — ignore
+            logging.info("Short press detected (ignored). Hold 2s to shut down.")
+
+        time.sleep(0.05)
 
 except KeyboardInterrupt:
     pass
