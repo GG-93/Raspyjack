@@ -1,0 +1,14 @@
+[Unit]
+Description=RaspyJack Dynamic Fan Control (temperature-based PWM)
+After=multi-user.target
+
+[Service]
+Type=simple
+# The payload reads /root/Raspyjack/config/headless.json and exits cleanly
+# if fan_control.enabled is false, so enabling this unit is always safe.
+ExecStart=/usr/bin/python3 /root/Raspyjack/payloads/hardware/dynamic_fan_control.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

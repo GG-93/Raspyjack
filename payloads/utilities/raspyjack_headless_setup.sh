@@ -457,6 +457,42 @@ setup_tailscale() {
     fi
 }
 
+setup_fan_service() {
+    local service_file="/etc/systemd/system/raspyjack-fan.service"
+
+    if [[ "$FAN_ENABLED" != "true" ]]; then
+        # Fan disabled in config: make sure any previously-installed service is stopped.
+        if systemctl list-unit-files 2>/dev/null | grep -q '^raspyjack-fan.service'; then
+            echo "Fan control disabled in config; stopping raspyjack-fan.service..."
+            systemctl disable --now raspyjack-fan.service 2>/dev/null || true
+        fi
+        return
+    fi
+
+    print_header
+    echo "Installing fan control service (pin ${FAN_PIN})..."
+
+    tee "$service_file" > /dev/null <<EOF
+[Unit]
+Description=RaspyJack Dynamic Fan Control (temperature-based PWM)
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 ${PROJECT_ROOT}/payloads/hardware/dynamic_fan_control.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now raspyjack-fan.service 2>/dev/null || true
+    systemctl restart raspyjack-fan.service 2>/dev/null || true
+    echo "Fan control service installed, enabled, and started."
+}
+
 show_status() {
     print_header
     echo "Current status:"
@@ -517,6 +553,7 @@ main() {
             setup_network
             setup_ethernet
             setup_tailscale
+            setup_fan_service
             show_status
             echo ""
             echo "Run with 'install-service' to make this run automatically on boot."

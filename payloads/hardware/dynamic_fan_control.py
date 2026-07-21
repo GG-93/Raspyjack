@@ -12,6 +12,7 @@ Hardcoded defaults are used if the config file is missing or fan_control is abse
 
 import json
 import os
+import shutil
 import time
 import subprocess
 import sys
@@ -76,6 +77,29 @@ def calculate_duty(temp, cfg):
 def main():
     cfg = load_config()
     pin = cfg["pin"]
+
+    # Foreground-launch guard.
+    # systemd sets INVOCATION_ID for services; if it's absent we were started in
+    # the foreground — almost always the WebUI payload runner, which blocks until
+    # the payload exits. Our control loop never exits, so running it here would
+    # freeze the WebUI/LCD. Instead, hand off to the background service and return
+    # immediately. Set RJ_FAN_FOREGROUND=1 to force the blocking loop (manual debug).
+    if os.environ.get("INVOCATION_ID") is None and os.environ.get("RJ_FAN_FOREGROUND") != "1":
+        started = (
+            shutil.which("systemctl") is not None
+            and subprocess.call(
+                ["systemctl", "start", "raspyjack-fan.service"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            ) == 0
+        )
+        if started:
+            print("[FanControl] Started background service 'raspyjack-fan.service'. "
+                  "Fan control is now running in the background — control returned to the UI.")
+        else:
+            print("[FanControl] Foreground launch detected, but the background service is not available.")
+            print("[FanControl] Install it with: sudo bash payloads/utilities/raspyjack_headless_setup.sh")
+            print("[FanControl] Not running the blocking loop here (it would freeze the WebUI).")
+        return
 
     print(f"[FanControl] GPIO {pin} | {cfg['min_temp']}°C–{cfg['max_temp']}°C | duty {cfg['min_duty']}–{cfg['max_duty']}%")
 
