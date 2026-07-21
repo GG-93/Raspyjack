@@ -13,6 +13,20 @@
 
 ---
 
+> ## 🔱 About this fork
+>
+> This is a fork of the original [**7h30th3r0n3/Raspyjack**](https://github.com/7h30th3r0n3/Raspyjack). Everything in this README is the upstream project **except** the additions below, which are unique to this fork and marked with a **🔱** wherever they appear:
+>
+> - **🔱 [Pi 4B Headless Install](#-pi-4b-headless-install-this-fork)** — run RaspyJack on a screenless Pi 4B, driven entirely from the WebUI over WiFi.
+> - **🔱 Config-driven setup** — a `config/headless.json` wizard for WiFi / hostname / Tailscale / fan. Personal settings are gitignored and never committed, so this repo clones and runs clean.
+> - **🔱 Background fan control** — temperature-based PWM fan as a **systemd service** (never freezes the WebUI), plus manual **Fan ON / OFF / Auto** payloads.
+> - **🔱 Clean-shutdown button** — a GPIO 17 momentary-button service (hold 2s to power down safely).
+> - Full breakdown in **[docs/FORK_DIFFERENCES.md](docs/FORK_DIFFERENCES.md)**.
+>
+> **Keeping in sync with the original:** see [🔄 Update](#-update) — this fork tracks upstream and merges the creator's updates while preserving these customizations.
+
+---
+
 ## ⚠️ Legal / Safety
 
 RaspyJack is for **authorized security testing, research, and education only**.
@@ -191,13 +205,14 @@ This fork adds a headless operation layer for running RaspyJack on a **Raspberry
 
 > **Pi Zero + LCD HAT users:** ignore this section — use the standard install above.
 
-### What this fork adds
+### 🔱 What this fork adds
 
 - `scripts/configure_headless.sh` — interactive first-time setup wizard (WiFi, hostname, Tailscale, fan)
-- `payloads/utilities/raspyjack_headless_setup.sh` — applies your config (WiFi client, hostname, services)
-- `payloads/hardware/dynamic_fan_control.py` — PWM fan control via MOSFET on GPIO 18
-- `scripts/shutdown_button.py` — GPIO 17 power button, hold 2s to shut down cleanly
-- `config/systemd/` — systemd service units for shutdown button and headless autostart
+- `payloads/utilities/raspyjack_headless_setup.sh` — applies your config (WiFi client, hostname, services) and **auto-installs the fan service** when fan control is enabled
+- `payloads/hardware/dynamic_fan_control.py` — temperature-based PWM fan control via MOSFET on GPIO 18, run as a **background systemd service** (so it never blocks the WebUI)
+- `payloads/hardware/fan_on.py` / `fan_off.py` / `fan_auto.py` — manual fan override (force 100%, force off, or return to automatic)
+- `scripts/shutdown_button.py` — GPIO 17 power button, hold 2s to shut down cleanly (polls the pin — reliable on current Raspberry Pi OS)
+- `config/systemd/` — systemd units for the **fan service**, shutdown button, and headless autostart
 - `docs/` — Pi 4B user guide, field guide, setup docs
 
 See `docs/FORK_DIFFERENCES.md` for full details.
@@ -217,7 +232,7 @@ See `docs/FORK_DIFFERENCES.md` for full details.
 ```bash
 sudo apt update && sudo apt install -y git
 sudo -i
-git clone https://github.com/GG-93/Raspyjack.git Raspyjack
+git clone https://github.com/GG-93/RaspyJACKED.git Raspyjack
 cd Raspyjack
 chmod +x install_raspyjack.sh
 ./install_raspyjack.sh
@@ -275,15 +290,26 @@ the right driver automatically (needs internet: plug the Pi into a router for th
 
 **Step 6 — Optional: fan control and shutdown button**
 
-Fan control runs as a payload — launch `Dynamic Fan Control` from the WebUI hardware category.
+**Fan** — if you set `fan_control.enabled` in the wizard (Step 2), the headless setup
+(Step 3) **installs and starts the fan as a background systemd service automatically** —
+nothing else to do. It runs on every boot and stays out of the WebUI's way. To control it
+by hand, use the **Fan ON / Fan OFF / Fan Auto** payloads in the WebUI hardware category.
 
-For the shutdown button service:
+> Do **not** launch `Dynamic Fan Control` directly as a foreground payload — it's a
+> forever-running loop, so it now detects that case and hands off to the service instead of
+> blocking the WebUI. Wire the fan with an IRLZ44N MOSFET on **GPIO 18** (gate→18, drain→fan−,
+> source→GND, fan+→5V).
+
+**Shutdown button** — wire a momentary button between **GPIO 17 (pin 11)** and **GND (pin 9)**,
+then install its service:
 
 ```bash
 sudo cp /root/Raspyjack/config/systemd/raspyjack-shutdown.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now raspyjack-shutdown.service
 ```
+
+Hold the button ~2 seconds to trigger a clean shutdown.
 
 ### Reference docs
 
@@ -298,18 +324,42 @@ sudo systemctl enable --now raspyjack-shutdown.service
 
 ## 🔄 Update
 
+### On the Pi — pull this fork's latest
+
 ```bash
 sudo -i
-cd /root
-rm -rf Raspyjack
-git clone https://github.com/7h30th3r0n3/raspyjack.git Raspyjack
-cd Raspyjack
-chmod +x install_raspyjack.sh
-./install_raspyjack.sh
+cd /root/Raspyjack
+git pull origin main
 reboot
 ```
 
-Before major updates, back up loot/config you care about.
+> Your `config/headless.json`, loot, and captures are gitignored, so a pull won't touch them.
+
+### 🔱 Keeping this fork in sync with the original creator
+
+This fork tracks the upstream project and merges the creator's updates **while keeping the
+fork's customizations**. One-time remote setup (already configured in this repo):
+
+```bash
+git remote add upstream https://github.com/7h30th3r0n3/Raspyjack.git   # if not already present
+```
+
+Then, whenever you want to catch up with the creator:
+
+```bash
+git fetch upstream            # get the creator's latest
+git merge upstream/main       # merge their updates into your branch (your commits are preserved)
+# resolve any conflicts, then:
+git push origin main          # save the synced result to your fork
+```
+
+A conflict only happens where the same lines changed on both sides; edit the marked file,
+`git add` it, and `git commit`. `git merge --abort` safely undoes an in-progress merge.
+
+> ⚠️ Do **not** `rm -rf` and re-clone from upstream — that would erase this fork's headless
+> layer, fan/button services, and docs. Always sync with `git merge upstream/main` instead.
+
+Before major updates, back up any loot/config you care about.
 
 ---
 

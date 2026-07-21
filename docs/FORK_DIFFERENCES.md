@@ -26,11 +26,15 @@ Reads `headless.json` and configures the Pi for headless operation:
 
 Interactive script that walks a new user through creating their `headless.json`. Prompts for WiFi SSID/password, hostname, optional Tailscale key, and optional fan control settings.
 
-### 4. Dynamic Fan Control Payload (`payloads/hardware/dynamic_fan_control.py`)
+### 4. Dynamic Fan Control (`payloads/hardware/dynamic_fan_control.py` + systemd service)
 
-PWM fan speed controller driven by CPU temperature. Reads settings from `headless.json` (`fan_control` section). Uses GPIO 18 (hardware PWM) by default — confirmed safe, no conflict with HAT button pins (5, 6, 13, 16, 19, 20, 21, 26).
+PWM fan speed controller driven by CPU temperature. Reads settings from `headless.json` (`fan_control` section). Uses GPIO 18 by default — no conflict with HAT button pins (5, 6, 13, 16, 19, 20, 21, 26). Runs as a **background systemd service** (`config/systemd/raspyjack-fan.service`), auto-installed by the headless setup when fan control is enabled, so it never blocks the WebUI. A foreground-launch guard makes the payload hand off to the service instead of freezing the UI. Manual override payloads — `fan_on.py`, `fan_off.py`, `fan_auto.py` — force 100%, force off, or restore automatic control via a tmpfs override file.
 
-### 5. Portable Headless Documentation (`docs/PORTABLE_HEADLESS_SETUP.md`)
+### 5. Clean-Shutdown Button (`scripts/shutdown_button.py` + systemd service)
+
+Momentary button on GPIO 17 (pin 11) to GND (pin 9); hold ~2s for a clean shutdown. Polls the pin rather than using `GPIO.wait_for_edge()` (which is broken on current Raspberry Pi OS / Bookworm). Installed via `config/systemd/raspyjack-shutdown.service`.
+
+### 6. Portable Headless Documentation (`docs/PORTABLE_HEADLESS_SETUP.md`)
 
 Explains the two connection methods (WiFi client with static IP + mDNS, optional Tailscale), the handoff process for giving clones to others, and how to strip personal data before sharing.
 
@@ -41,7 +45,7 @@ Explains the two connection methods (WiFi client with static IP + mDNS, optional
 - **Pi is a WiFi client only** — it connects to an existing hotspot. It never creates its own access point. Upstream already disables `hostapd` by default; this fork keeps that decision.
 - **No internet required for operation** — the WebUI and all payloads work on a local network with no internet access. Tailscale is strictly optional.
 - **Nothing personal in the repo** — `headless.json` is gitignored. The example file ships with placeholder values.
-- **No upstream conflicts** — all additions are new files or new payloads. No existing files from upstream were modified except `.gitignore` (extended, not changed).
+- **Minimal upstream footprint** — most changes are new files (headless layer, fan/button services, docs). A few upstream files are lightly modified (e.g. `README.md`, `.gitignore`, and `wardriving.py` to protect the WebUI management interface), which keeps merges with upstream small.
 
 ---
 
