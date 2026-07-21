@@ -24,6 +24,11 @@ except ImportError:
 
 CONFIG_PATH = "/root/Raspyjack/config/headless.json"
 
+# Manual override, written by the Fan ON / Fan OFF / Fan Auto payloads.
+# Contents: "on" (force 100%), "off" (force off), or "auto"/absent (temperature).
+# Lives in tmpfs so it resets to automatic control on every reboot.
+OVERRIDE_PATH = "/dev/shm/rj_fan_override"
+
 DEFAULTS = {
     "pin": 18,
     "min_temp_c": 45,
@@ -31,7 +36,7 @@ DEFAULTS = {
     "min_duty": 20,
     "max_duty": 100,
 }
-UPDATE_INTERVAL = 8  # seconds
+UPDATE_INTERVAL = 2  # seconds — short so manual ON/OFF toggles feel responsive
 
 
 def load_config():
@@ -74,6 +79,28 @@ def calculate_duty(temp, cfg):
     return int(cfg["min_duty"] + (cfg["max_duty"] - cfg["min_duty"]) * ratio)
 
 
+def read_override():
+    """Return 'on', 'off', or 'auto' from the override file (auto if absent/invalid)."""
+    try:
+        with open(OVERRIDE_PATH) as f:
+            v = f.read().strip().lower()
+        if v in ("on", "off", "auto"):
+            return v
+    except Exception:
+        pass
+    return "auto"
+
+
+def desired_duty(temp, cfg):
+    """Duty cycle honoring any manual override, else temperature-based."""
+    override = read_override()
+    if override == "on":
+        return cfg["max_duty"], override
+    if override == "off":
+        return 0, override
+    return calculate_duty(temp, cfg), override
+
+
 def main():
     cfg = load_config()
     pin = cfg["pin"]
@@ -107,8 +134,8 @@ def main():
         print("[FanControl] RPi.GPIO not available — simulation mode.")
         while True:
             temp = get_cpu_temp()
-            duty = calculate_duty(temp, cfg)
-            print(f"[SIM] {temp:.1f}°C → {duty}%")
+            duty, mode = desired_duty(temp, cfg)
+            print(f"[SIM] {temp:.1f}°C ({mode}) → {duty}%")
             time.sleep(UPDATE_INTERVAL)
         return
 
@@ -122,8 +149,8 @@ def main():
         print("[FanControl] Running in no-hardware mode (no fan connected or permission issue).")
         while True:
             temp = get_cpu_temp()
-            duty = calculate_duty(temp, cfg)
-            print(f"[NO-HW] {temp:.1f}°C → would set {duty}%")
+            duty, mode = desired_duty(temp, cfg)
+            print(f"[NO-HW] {temp:.1f}°C ({mode}) → would set {duty}%")
             time.sleep(UPDATE_INTERVAL)
         return
 
@@ -133,7 +160,7 @@ def main():
     try:
         while True:
             temp = get_cpu_temp()
-            duty = calculate_duty(temp, cfg)
+            duty, mode = desired_duty(temp, cfg)
 
             if duty == 0:
                 if pwm_running:
@@ -147,7 +174,7 @@ def main():
                 else:
                     pwm.ChangeDutyCycle(duty)
 
-            print(f"[Fan] {temp:.1f}°C → {'OFF' if duty == 0 else str(duty)+'%'}")
+            print(f"[Fan] {temp:.1f}°C ({mode}) → {'OFF' if duty == 0 else str(duty)+'%'}")
             time.sleep(UPDATE_INTERVAL)
     except KeyboardInterrupt:
         print("\n[FanControl] Stopped.")
